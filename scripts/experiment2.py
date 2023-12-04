@@ -6,7 +6,7 @@ from safe_rl.utils.run_utils import setup_logger_kwargs
 from safe_rl.utils.mpi_tools import mpi_fork
 import math
 import numpy as np
-
+# import safe_rl.
 DT = 0.002
 K = 19.
 v_factor = 300.
@@ -108,7 +108,7 @@ def main(robot, task, algo, seed, exp_name, cpu):
         num_steps = 1e8
         steps_per_epoch = 60000
     else:
-        num_steps = 4.2*1e6
+        num_steps = 1e7
         steps_per_epoch = 30000
     epochs = int(num_steps / steps_per_epoch)
     save_freq = 5
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--robot', type=str, default='Point')
-    parser.add_argument('--task', type=str, default='Push2')
+    parser.add_argument('--task', type=str, default='Goal1')
     parser.add_argument('--algo', type=str, default='ppo')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='')

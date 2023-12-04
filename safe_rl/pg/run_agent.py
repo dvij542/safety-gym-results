@@ -14,6 +14,138 @@ from safe_rl.pg.utils import values_as_sorted_list
 from safe_rl.utils.logx import EpochLogger
 from safe_rl.utils.mpi_tf import MpiAdamOptimizer, sync_all_params
 from safe_rl.utils.mpi_tools import mpi_fork, proc_id, num_procs, mpi_sum
+import math
+import numpy as np
+
+DT = 0.002
+K = 19.
+v_factor = 300.
+radius = 0.4
+iters_schedule = [0,590000,600000,2000000,2700000,3400000]
+lambda_1_schedule = [0.02,0.02,0.02,0.02,0.02,0.01]
+lambda_2_schedule = [0.02,0.02,0.02,0.02,0.02,0.01]
+k_penalty = 0.#0.0022
+USE_CBF = True
+
+def mat_to_yaw(mat) :
+    return math.atan2(-mat[0,1],mat[0,0])
+
+def diff_theta(t1,t2) :
+    dt = t2-t1
+    dt -= (dt>math.pi)*2*math.pi 
+    dt += (dt<-math.pi)*2*math.pi
+    return dt
+
+def wcmd_to_w(wcmd) :
+    if wcmd > 0. :
+        return (wcmd-0.)*(30./0.895)
+    elif wcmd < -0. :
+        return (wcmd+0.)*(30./0.895)
+    else :
+        return 0.
+
+def w_to_wcmd(w) :
+    if w > 0. :
+        return (w)*(0.895/30.) + 0.1
+    elif w < 0. :
+        return (w)*(0.895/30.) - 0.1
+    else :
+        return 0.
+
+def get_cbf_constrained_action(ac,hazards,state,prev_greenlim_poses=None) :
+    # print(ac,hazards,state)
+    # ac[0]/=20.
+    # print(len(hazards))
+    x,y,yaw,vx,vy,vyaw = state
+    vt = v_factor*min(max(ac[0],-0.05),0.05)
+    ws = np.arange(-30.,30.,.6)
+    # print(wcmd_to_w(ac[1]))
+    costs = (ws-wcmd_to_w(ac[1]))**2/1000.
+    vel_yaw = math.atan2(vy,vx)
+    # print(diff_theta(vel_yaw,yaw))
+    if abs(diff_theta(vel_yaw,yaw)) < math.pi/2. :
+        v = math.sqrt(vx**2+vy**2)
+    else :
+        v = -math.sqrt(vx**2+vy**2)
+        vel_yaw += math.pi
+    # print(v)
+    # if abs(v) < 2.:
+    #     return ac
+    curr_min_vals = np.array([1000.]*len(ws))
+    min_cost = np.zeros(len(ws))
+    dtyaw = 0.0
+    n_greenlims = 0
+    if prev_greenlim_poses :
+        n_greenlims = len(prev_greenlim_poses)
+    for hazard in hazards :
+        xh,yh,_ = hazard
+        
+        yawh = math.atan2(yh-y,xh-x)
+        h = math.sqrt((x-xh)**2+(y-yh)**2) - radius
+        # print(math.sqrt((x-xh)**2+(y-yh)**2))
+        yaw_diff = diff_theta(yaw,yawh)
+        h_dot = -v*np.cos(yaw_diff)
+        h_dot_dot = -K*(vt-v)*np.cos(yaw_diff) - v*ws*np.sin(yaw_diff) + v**2*np.sin(yaw_diff)**2/math.sqrt((x-xh)**2+(y-yh)**2)
+        # if (h + lambda_1*h_dot)> 0. :
+        cost = (lambda_1*lambda_2*h_dot_dot + (lambda_1+lambda_2)*h_dot + h)
+        # else :
+        #     cost = (lambda_1*lambda_2*h_dot_dot/10. + (lambda_1+lambda_2/10.)*h_dot + h)
+        # cost = np.abs(yaw_diff) - np.arcsin(0.35/max(0.36,math.sqrt((x-xh)**2+(y-yh)**2)))
+        # print(math.sqrt((x-xh)**2+(y-yh)**2))
+        # print(np.abs(yaw_diff),np.arcsin(0.35/max(0.36,math.sqrt((x-xh)**2+(y-yh)**2))))
+        cost = (cost<0.)*cost*(abs(abs(yaw_diff)-math.pi/2.)>math.pi/10.)*(abs(yaw_diff)>math.pi/30.)
+        # print(cost)
+        vals = h + lambda_1*h_dot
+        min_cost = (vals<curr_min_vals)*cost + (vals>=curr_min_vals)*min_cost
+        curr_min_vals = (vals<curr_min_vals)*vals + (vals>=curr_min_vals)*curr_min_vals
+        # print(cost)
+        costs += 1e6*(cost<0.)*(cost**2)
+    # print(min_cost)
+    # print(costs)
+    # costs += 10000*min_cost**2
+    # print(np.argmin(costs))
+    w_new = -30.+.6*np.argmin(costs)
+    w_new_cmd = w_to_wcmd(w_new)
+    ac_new = [ac[0],ac[1]]
+    ac_new[1] = w_new_cmd
+    
+    vts = np.arange(-15.,15.,.6)
+    costs = (vts-v_factor*(ac[0]))**2/1000.
+    vel_yaw = math.atan2(vy,vx)
+    # print(diff_theta(vel_yaw,yaw))
+    if abs(diff_theta(vel_yaw,yaw)) < math.pi/2. :
+        v = math.sqrt(vx**2+vy**2)
+    else :
+        v = -math.sqrt(vx**2+vy**2)
+        vel_yaw += math.pi
+    curr_min_vals = np.array([1000.]*len(ws))
+    min_cost = np.zeros(len(ws))
+    dtyaw = 0.0
+    for hazard in hazards :
+        xh,yh,_ = hazard
+        
+        yawh = math.atan2(yh-y,xh-x)
+        h = math.sqrt((x-xh)**2+(y-yh)**2) - radius
+        yaw_diff = diff_theta(yaw+w_new*dtyaw,yawh)
+        h_dot = -v*np.cos(yaw_diff)
+        h_dot_dot = -K*(vts-v)*np.cos(yaw_diff) - v*w_new*np.sin(yaw_diff) + v**2*np.sin(yaw_diff)**2/math.sqrt((x-xh)**2+(y-yh)**2)
+        cost = (lambda_1*lambda_2*h_dot_dot + (lambda_1+lambda_2)*h_dot + h)
+        # cost = np.abs(yaw_diff) - np.arcsin(0.35/max(0.36,math.sqrt((x-xh)**2+(y-yh)**2)))
+        # print(math.sqrt((x-xh)**2+(y-yh)**2))
+        # print(np.abs(yaw_diff),np.arcsin(0.35/max(0.36,math.sqrt((x-xh)**2+(y-yh)**2))))
+        cost = (h>0.)*(cost<0.)*cost*(abs(abs(yaw_diff)-math.pi/2.)>math.pi/4.)
+        # print(cost)
+        vals = h + lambda_1*h_dot
+        # min_cost = (vals<curr_min_vals)*cost + (vals>=curr_min_vals)*min_cost
+        # curr_min_vals = (vals<curr_min_vals)*vals + (vals>=curr_min_vals)*curr_min_vals
+        # print(cost)
+        costs += 1e6*(cost<0.)*(cost**2)
+    
+    a_new = -15.+.6*np.argmin(costs)
+    ac_new[0] = a_new/v_factor
+    # print(v,ac,ac_new)
+    return ac_new, abs(w_new-wcmd_to_w(ac[1]))/60. + abs(ac_new[0]-ac[0])/60.
+
 
 # Multi-purpose agent runner for policy optimization algos 
 # (PPO, TRPO, their primal-dual equivalents, CPO)
@@ -22,7 +154,7 @@ def run_polopt_agent(env_fn,
                      actor_critic=mlp_actor_critic, 
                      ac_kwargs=dict(), 
                      seed=0,
-                     render=False,
+                     render=True,
                      # Experience collection:
                      steps_per_epoch=4000, 
                      epochs=50, 
@@ -49,7 +181,8 @@ def run_polopt_agent(env_fn,
                      save_freq=1
                      ):
 
-
+    global lambda_1, lambda_2
+    print("Save freq is ", save_freq)
     #=========================================================================#
     #  Prepare logger, seed, and environment in this process                  #
     #=========================================================================#
@@ -271,6 +404,7 @@ def run_polopt_agent(env_fn,
     #=========================================================================#
 
     def update():
+
         cur_cost = logger.get_stats('EpCost')[0]
         c = cur_cost - cost_lim
         if c > 0 and agent.cares_about_cost:
@@ -340,45 +474,100 @@ def run_polopt_agent(env_fn,
 
     start_time = time.time()
     o, r, d, c, ep_ret, ep_cost, ep_len = env.reset(), 0, False, 0, 0, 0, 0
+    curr_pos = env.world.robot_pos()
+    prevx,prevy = curr_pos[0], curr_pos[1]
+    prevyaw = mat_to_yaw(env.world.robot_mat())
     cur_penalty = 0
     cum_cost = 0
-
+    n_env_interactions = 0
+    prev_gremlins_obj_pos = env.gremlins_obj_pos
     for epoch in range(epochs):
 
         if agent.use_penalty:
             cur_penalty = sess.run(penalty)
 
         for t in range(local_steps_per_epoch):
+            # print("Save freq is ", save_freq)
 
+            n_env_interactions += 8
+            if n_env_interactions <= iters_schedule[0] :
+                lambda_1 = lambda_1_schedule[0]
+                lambda_2 = lambda_2_schedule[0]
+            elif n_env_interactions >= iters_schedule[-1] :
+                lambda_1 = lambda_1_schedule[-1]
+                lambda_2 = lambda_2_schedule[-1]
+            else :
+                k = 0
+                while iters_schedule[k] <= n_env_interactions :
+                    k += 1
+                k -= 1
+                lambda_1 = (lambda_1_schedule[k+1]*(n_env_interactions-iters_schedule[k]) \
+                        + lambda_1_schedule[k]*(iters_schedule[k+1]-n_env_interactions)) \
+                        /(iters_schedule[k+1]-iters_schedule[k])
+                lambda_2 = (lambda_2_schedule[k+1]*(n_env_interactions-iters_schedule[k]) \
+                        + lambda_2_schedule[k]*(iters_schedule[k+1]-n_env_interactions)) \
+                        /(iters_schedule[k+1]-iters_schedule[k])
+            
+            if t%1000==0 :
+                print(lambda_1,lambda_2,ep_cost)
             # Possibly render
-            if render and proc_id()==0 and t < 1000:
-                env.render()
+            # if render and proc_id()==0 and t < 1000:
+            #     # print(t)
+            #     env.render()
             
             # Get outputs from policy
             get_action_outs = sess.run(get_action_ops, 
                                        feed_dict={x_ph: o[np.newaxis]})
             a = get_action_outs['pi']
+            # a[0]/=20.
             v_t = get_action_outs['v']
             vc_t = get_action_outs.get('vc', 0)  # Agent may not use cost value func
             logp_t = get_action_outs['logp_pi']
             pi_info_t = get_action_outs['pi_info']
 
+            curr_pos = env.world.robot_pos()
+            x,y = curr_pos[0], curr_pos[1]
+            yaw = mat_to_yaw(env.world.robot_mat())
+            vx,vy,vyaw = (x-prevx)/DT, (y-prevy)/DT, (yaw-prevyaw)/DT
+            prevx = x
+            prevy = y
+            prevyaw = yaw
+            # print(vx,vy,yaw)
+            # print(a)
+            # a[0,0] /= 20.
+            # print(a)
+            # if proc_id()==0 :
+            #     print((env.gremlins_obj_pos))
+            a_new, penalty_ = get_cbf_constrained_action(a[0],env.gremlins_obj_pos+env.hazards_pos,[x,y,yaw,vx,vy,vyaw],prev_gremlins_obj_pos)
+            prev_gremlins_obj_pos = env.gremlins_obj_pos
+            # print(penalty)
             # Step in environment
-            o2, r, d, info = env.step(a)
+            if USE_CBF :
+                # print("passing cbf command")
+                o2, r, d, info = env.step(a_new)
+                # print(cur_penalty)
+                # cur_penalty += k_penalty*(penalty)
+                # print(cur_penalty)
+            else :
+                o2, r, d, info = env.step(a)
+            
 
             # Include penalty on cost
             c = info.get('cost', 0)
-
+            # print("h ",c)
+            # c += k_penalty*(penalty_)
+            # print("h ",c)
             # Track cumulative cost over training
             cum_cost += c
 
             # save and log
             if agent.reward_penalized:
-                r_total = r - cur_penalty * c
+                print("reward is penalized")
+                r_total = r - cur_penalty * c #- k_penalty*(penalty_)
                 r_total = r_total / (1 + cur_penalty)
                 buf.store(o, a, r_total, v_t, 0, 0, logp_t, pi_info_t)
             else:
-                buf.store(o, a, r, v_t, c, vc_t, logp_t, pi_info_t)
+                buf.store(o, a, r - k_penalty*(penalty_), v_t, c, vc_t, logp_t, pi_info_t)
             logger.store(VVals=v_t, CostVVals=vc_t)
 
             o = o2
@@ -404,13 +593,18 @@ def run_polopt_agent(env_fn,
 
                 # Only save EpRet / EpLen if trajectory finished
                 if terminal:
+                    print("Terminal reached ", ep_cost)
                     logger.store(EpRet=ep_ret, EpLen=ep_len, EpCost=ep_cost)
                 else:
                     print('Warning: trajectory cut off by epoch at %d steps.'%ep_len)
 
                 # Reset environment
                 o, r, d, c, ep_ret, ep_len, ep_cost = env.reset(), 0, False, 0, 0, 0, 0
-
+                prev_gremlins_obj_pos = env.gremlins_obj_pos
+                curr_pos = env.world.robot_pos()
+                prevx,prevy = curr_pos[0], curr_pos[1]
+                prevyaw = mat_to_yaw(env.world.robot_mat())
+    
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
             logger.save_state({'env': env}, None)
@@ -477,7 +671,6 @@ def run_polopt_agent(env_fn,
         # Time and steps elapsed
         logger.log_tabular('TotalEnvInteracts', (epoch+1)*steps_per_epoch)
         logger.log_tabular('Time', time.time()-start_time)
-
         # Show results!
         logger.dump_tabular()
 
@@ -490,7 +683,7 @@ if __name__ == '__main__':
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--cost_gamma', type=float, default=0.99)
-    parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--seed', '-s', type=int, default=4)
     parser.add_argument('--cpu', type=int, default=4)
     parser.add_argument('--steps', type=int, default=4000)
     parser.add_argument('--epochs', type=int, default=50)

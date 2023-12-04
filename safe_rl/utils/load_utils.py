@@ -5,6 +5,7 @@ import os
 import os.path as osp
 import tensorflow as tf
 from safe_rl.utils.logx import restore_tf_graph
+import gym
 
 def load_policy(fpath, itr='last', deterministic=False):
 
@@ -36,7 +37,10 @@ def load_policy(fpath, itr='last', deterministic=False):
     try:
         state = joblib.load(osp.join(fpath, 'vars'+itr+'.pkl'))
         env = state['env']
+        # env = gym.make('Safexp-PointGoal1-v0')
+        print("Environment loaded successfully")
     except:
         env = None
+        print("Environment couldn't load properly")
 
     return env, get_action, sess

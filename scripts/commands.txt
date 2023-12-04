@@ -1,0 +1,23 @@
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-09-30_ppo_lagrangian_PointGoal1/2023-09-30_19-03-17-ppo_lagrangian_PointGoal1_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-09-30_ppo_lagrangian_PointGoal1/2023-09-30_21-50-24-ppo_lagrangian_PointGoal1_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-07_ppo_lagrangian_PointGoal2/2023-10-07_14-05-03-ppo_lagrangian_PointGoal2_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-07_ppo_lagrangian_PointGoal2/2023-10-07_04-03-04-ppo_lagrangian_PointGoal2_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-07_ppo_lagrangian_PointButton1/2023-10-07_18-08-45-ppo_lagrangian_PointButton1_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-07_ppo_lagrangian_PointButton1/2023-10-07_19-36-58-ppo_lagrangian_PointButton1_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-09_ppo_PointButton2/2023-10-09_18-24-31-ppo_PointButton2_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-07_ppo_lagrangian_PointButton2/2023-10-07_23-18-33-ppo_lagrangian_PointButton2_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-08_ppo_lagrangian_PointPush1/2023-10-08_04-06-44-ppo_lagrangian_PointPush1_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-08_ppo_lagrangian_PointPush1/2023-10-08_13-24-32-ppo_lagrangian_PointPush1_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-09_ppo_lagrangian_PointPush2/2023-10-09_01-07-26-ppo_lagrangian_PointPush2_s0
+
+python test_policy.py /home/dvij/intro_to_rl/16831_F23_HW/safety-starter-agents/data/2023-10-08_ppo_lagrangian_PointPush2/2023-10-08_23-56-01-ppo_lagrangian_PointPush2_s0
