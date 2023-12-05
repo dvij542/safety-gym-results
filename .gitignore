@@ -106,7 +106,7 @@ venv.bak/
 mjkey.txt
 MUJOCO_LOG.TXT
 
-data
+# data
 
 *~
 *.*~
